@@ -1,0 +1,365 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+```{r}
+
+```
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+```{r}
+library()
+```
+library() command lists the R packages on my computer 
+
+```{r}
+search()
+```
+search() command lists packages loaded
+
+```{r}
+library(<package name>)
+ls("package:<package name>")
+```
+lists the available functions for <package name>
+
+```{r}
+<package name>::<functionName>("Tyr")
+#example:
+?seqinr::a #gives info on the function 'a'
+seqinr::a("Tyr") #this command runs the function 'a'
+```
+
+```{r}
+data(aaindex, package="seqinr")   
+```
+this command lists the data available in this package 'aaindex'
+
+```{r}
+aaindex$FASG890101 
+```
+this command  would give specific data on the indice: 'FASG890101' 
+
+```{r}
+seqinr::choosebank("swissprot")
+mySeq <- seqinr::query("mySeq", "N=MBP1_YEAST")
+mbp1 <- seqinr::getSequence(mySeq)
+seqinr::closebank()
+x <- seqinr::AAstat(mbp1[[1]])
+barplot(sort(x$Compo), cex.names = 0.6)
+```
+these commands are used to download a sequence from swissprot and do some analysis on it
+
+```{r}
+library(seqinr)
+choosebank("swissprot")
+mySeq <- query("mySeq", "N=MBP1_YEAST")
+mbp1 <- getSequence(mySeq)
+closebank()
+x <- AAstat(mbp1[[1]])
+barplot(sort(x$Compo), cex.names = 0.6)
+```
+this code does the exact same thing, except, we have called the library function for the package, so we dont need to always mention the package. The first option is more clear!
+
+
+```{r}
+if (! requireNamespace("seqinr", quietly=TRUE)) {
+  install.packages("seqinr")
+}
+```
+this code segment can be useful to check if a package is downloaded. If it isnt downloaded, it will downloaded the needed package. Otherwise it will skip it, since it is already installed!
+
+
+
+#comparing TRUE and False Arguments and histograms 
+```{r}
+#    & (means AND)
+TRUE & TRUE
+
+#    | (means OR)
+TRUE | TRUE
+
+# To check whether lastNum is less than 6 or greater than 10
+lastNum < 6 | lastNum > 10 
+
+#To check whether lastNum is in the interval [10, 20). (By the rules of mathematical #notation this means 10 is included but 20 is not)
+lastNum >= 10 & lastNum < 20
+
+
+FALSE | FALSE
+FALSE
+
+
+# To make a striped histogram, I can follow these steps
+stripes <- c("red", "grey")
+hist(rnorm(200), col=stripes)
+```
+
+#this segment will focus on R scalars, vectors and matrices 
+```{r}
+
+#vector subsetting 
+( myVec <- c(1, 1, 3, 5, 8, 13, 21, 34, 55, 89) )
+
+myVec[1] #is 1
+
+head(myVec, 1) #is the same thing, also 1 
+
+myVec[length(myVec)] #returns myVec[10], which is 89
+
+tail(myVec, 1) #is the same thing as previous, which is 89
+
+myVec[1:4]#returns items at index 1,2,3 and 4. So 1,1,3 and 5 
+
+myVec[seq(2, 6, 2)] #returns 1,5,13. See seq() functio below 
+
+# since a scalar is a vector of length 1, this will in fact return 5 
+#for some reason R doesn't like this.
+# 5[1] 
+
+
+a <- c(1, 3, 4, 1) 
+myVec[a] # this is also valid. it will return the elements at index 1,3,4 and 1 of myVec
+
+```
+
+#seq() function examples 
+```{r}
+#seq() function is used to generate sequences 
+
+seq(from = 2, to=6, by=2) #this will return 2,4, and 6. Since we start at 2, go up by 2 each time up until 6. 
+
+```
+
+
+#this segment will focus on excluding items when subsetting 
+```{r}
+
+( myVec <- c(1, 1, 3, 5, 8, 13, 21, 34, 55, 89) )
+
+( a <- -(1:4) ) #a is a vector with elements -1,-2,-3,-4
+
+myVec[a] #this will return myVec exluding first 4 characters. 
+# so myVec[a] == 13, 21, 34, 55, 89
+
+myVec[-((length(myVec)-3):length(myVec))] #this will return myVec exluding last 4 characters 
+#myVec[-((length(myVec)-3):length(myVec))] == myVec[-(7:10)] == 1  1  3  5  8 13
+
+```
+
+#this segment will focus on subsettign by boolean vectors  7.8
+```{r}
+myVec <- c(1, 1, 3, 5, 8, 13, 21, 34, 55, 89) 
+
+myVec > 4 
+# this will return: FALSE FALSE FALSE  TRUE  TRUE  TRUE  TRUE  TRUE  TRUE  TRUE
+
+#this can also then be used for subsetting, as so: 
+myVec[myVec > 4]
+#returns elements in myVec greater than 4: 5  8 13 21 34 55 89 
+
+(1:20)[c(TRUE, FALSE)] #this returns all the odd numbers: 1  3  5  7  9 11 13 15 17 19
+#this is because if the vector c(True, False) is too short, so it will repeat. 
+```
+
+#Subsetting by name and what '[' bracket is used for 7.9 + 7.10 
+```{r}
+myVec <- c(1, 1, 3, 5, 8, 13, 21, 34, 55, 89)
+
+#the summary function will give summary data of the vector. 
+#therefore summary(myVec)["Median"] will then select the median of the vector 
+summary(myVec)["Median"]
+
+summary(myVec)[3] #this will give the same thing as the example above 
+
+summary(myVec)[c(2, 5)]
+
+summary(myVec)[c("Max", "Min")] #this is wrong. change it to c(TRUE, FALSE). this will give the odd numbers of the summary just as above 
+
+#We have attached "[" to vectors above, but we can also attach it directly to functions #or other expressions as seen above to summary(). basically summary also returns a vector as well of statistics based on a vector
+
+#the summary(myVec) function also names each of the statistical values. these names are considered attirbutes to obtain the attributes, we must do 'names(summary(myVec))', which returns "Min."    "1st Qu." "Median"  "Mean"    "3rd Qu." "Max." 
+```
+
+#7.11 - vectors are not immutable 
+```{r}
+#new elements can be appeneded or removed from vectors. 
+
+#Append works like so: 
+x <- c(1,2,3)
+x[4] <- 5 #5 is appened to x now 
+
+#removing works like so: 
+x <- x[-(3:4)] #if we want to remove items at index 3 and 4. reassinging new x to x
+length(x) #can check if items were removed 
+
+#likewise: 
+x <- x[-1] #will remove the first element in x
+
+
+#fibonacci sequence extended 
+( myVec <- c(myVec, myVec[length(myVec)-1] + myVec[length(myVec)]) )
+
+```
+
+#vectorized operations 
+```{r}
+#many operations on vectors will be applied to every element in vector: below are a few examples
+
+(newVec <- c(6,8,9, 11))
+
+newVec + 1 #adds 1 to each element
+
+newVec * 2 #multiples each element by 2
+
+log(newVec) #will take the log of each element
+
+```
+
+# 7.15 matrices and matrice subsetting 
+```{r}
+#matrices are vectors which have rows and columns defined. 
+theMatrix <- 1:12
+dim(theMatrix) <- c(2,6) #this indicates rows = 2, x = columns. we would first fill columsn, then rows when splitting the vector 'theMatrix'
+theMatrix
+
+dim(theMatrix) <- c(4,3) #rows = 4, columns = 3
+
+dim(theMatrix) <- c(2,2,3) # 3 matrices each with: rows = 2, columns = 2
+
+dim(theMatrix) # returns the dimensions of theMatrix in a vector
+dim(theMatrix)[3] # only the size of the third dimension of theMatrix
+
+#If you have a two-dimensional matrix, the function nrow() and ncol() will also give you the number of rows and columns, respectively. Obviously, dim(theMatrix)[1] is the same as nrow(theMatrix).
+
+#we can also use rbind and cbind to combine vectors and form matrices
+x <- c(2,3,4)
+y <- c(5,6,7)
+(newMat <- rbind(x,y)) #this will give me 2 rows and 3 columns 
+(newCol <- cbind(x,y)) #this will give me 3 rows and 2 columns
+
+( newC <- cbind(newCol, c = 9:12) )  # naming a column "c" while cbind()'ing it
+#retrieving elements from matrices 
+# Within the square brackets the order is [, <columns<] 
+newMat[1,] # first row
+newMat[, 2] # second column
+newMat[3, 2] # element at row == 3, column == 2
+newMat[1:2, 1:2] # submatrix: rows 1 to 2 and columns 1 to 2
+
+#same subsetting applies to 3D matrices 
+#if the matrix is dim(theMatrix) <- c(2,2,3)
+#theMatrix[2,2,3] will get you the element in the 3rd matrix at row 2, column 2
+```
+
+#Chapter 8: data frames 
+
+```{r}
+( plasmidData <- read.table(
+                    file.path('/Users/erikensminger/Documents/BCB420_code/plasmidData.tsv'),
+                    sep="\t",
+                    header=TRUE,
+                    stringsAsFactors = FALSE) )
+plasmidData
+
+rownames(plasmidData) <- plasmidData[ , 1]   #this will set the first column as names for each row
+
+#retrieving rows 
+
+x <- plasmidData[2, ] #this will assign row two of data frame to x. x is also a data frame since it contains nums and ch
+
+plasmidData["pBR322", ]  #this will retrieve row with name "pBR322" 
+
+#retrieving columns 
+plasmidData[ , 2] #retrieving column 2 
+
+plasmidData[ , "Size"] #retrieving column with name 'size' 
+
+
+#removing rows: 
+plasmidData <- plasmidData[-2, ] #row 2 is removed 
+#adding back rows: 
+plasmidData <- rbind(plasmidData, x) #row x, is added to plasmidData
+
+
+#adding a completely new row
+plasmidData <- rbind(plasmidData, 
+                     data.frame(Name = "pMAL-p5x", Size = 5752,
+                                Marker = "Amp",Ori = "pMB1",
+                                Sites = "SacI, AvaI, ..., HindIII",
+                                stringsAsFactors = FALSE))
+
+
+plasmidData[plasmidData$Size > 3000, ] 
+
+plasmidData[1:4,plasmidData$Size > 3000 & plasmidData$Marker == "Amp"] 
+
+plasmidData[plasmidData$Size > 3000 & plasmidData$Marker == "Amp"] 
+
+plasmidData$Size[plasmidData$Size > 3000] 
+
+plasmidData[plasmidData$Size > 3000 & plasmidData$Ori == "ColE1"]
+```
+
+#Chapter 10: Subsetting in R 
+```{r}
+
+# [ ] "extracts" one or more elements defined within the brackets;
+# [[ ]] "extracts" a single element defined within the brackets;
+# $ "extracts" a single named element.
+# "Elements" are not necessarily scalars, but can apply to a row, column, or more complex data structure. But a # # "single element" can't be a range, or collection.
+
+plasmidData[1,] #retrieves row 1
+
+plasmidData[c(1, 2), ] #Retrieves row 1 and two. Same as plasmidData[1:2, ]
+
+plasmidData[c(1, 2, 1, 2, 1, 2), ] #could also repeat row 1 and 2 multiple times 
+
+plasmidData[ , 2 ] #retrives data of column 2 
+
+plasmidData[, "Name"] #can also select column names/row names. this selectects column with name "name' 
+
+plasmidData$Name #retrieves the column with name "Name" 
+
+plasmidData$Name[plasmidData$Ori != "ColE1"] #selects elements in column "Name" for 
+#R then returns all rows for which the vector is TRUE. In this way we can "filter" for values 
+plasmidData$Name[plasmidData$Ori != "ColE1"] #plasmidData$Name[c(FALSE, TRUE, FALSE, TRUE)]
+
+plasmidData[plasmidData$Ori != "ColE1",] #will return full rows, for which this statement is TRUE
+
+plasmidData[plasmidData$Ori != "ColE1"] #will return the columns for which this statement is true 
+
+
+
+#Sorting objects using Order: 10.3
+
+order(plasmidData$Size) #orders the elements in size column 
+
+plasmidData[order(plasmidData$Size), ] #Orderes rows by their size column 
+
+# Using grep: 
+
+#What does grep do? grep() matches substrings in strings and returns a vector of indices
+grep("Tet", plasmidData$Marker) # returns 2 3
+
+plasmidData[grep("Tet", plasmidData$Marker), ] #returns the rows where marker contains Tet
+
+
+plasmidData[grep("Tet", plasmidData$Marker), "Ori"] #returns the elements in columns Ori that are in same row as above 
+plasmidData$Ori[grep("Tet", plasmidData$Marker)] #same thing as: plasmidData[grep("Tet", plasmidData$Marker), "Ori"]
+
+
+```
+
