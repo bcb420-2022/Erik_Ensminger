@@ -1,0 +1,355 @@
+---
+title: "BCB420 Assignment 1: Data Selection and Initial Processing"
+author: "Erik Ensminger" 
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+## Table of Contents 
+##### Selecting an Expression Data set 
+##### Map to Hugo Symbols 
+##### Data Normalization 
+##### Plotting the data 
+##### Interpreting Results 
+##### Citation 
+
+## Selecting an Expression Data set 
+
+We first need to select the appropriate expression data set. Due to my interest in stem cells, I wanted to focus on studies, which had something to do with this field. I followed the steps to finding a GEO expression data set from lecture in R studio. From there, I filtered for stem cells and chose a study which focuses on amniotic fluid stem cells (haFSCs) of homos apiens with 32 samples. Here is a link to the GEO page: [GSE164692](https://0-www-ncbi-nlm-nih-gov.brum.beds.ac.uk/geo/query/acc.cgi?acc=GSE164692)
+
+### Brief Overview of Research Paper
+
+The study by Casciaro et al. focuses on using fractioning technique to characterise the sub-populations of haFSCs and determine the stemness of these cells. haFSC populations used for RNA-seq data were obtained from 8 pregnant women, known as the donors in the count file. Each of the donors haFSCs population were sorted through Non-Equilibrium Earth Gravity Assisted Field Flow Fractionation principles, whereby cells were run through a fraction. There were 4 different fractions by which  these cells were sorted. Looking at the gene count file of this study, the columns contain the samples and are each represented through a 'donor_#_F#' code. 'Donor_#' represents from which donor the sample is from and 'F#' is which fraction the sample is from. 
+Overall, the study found high heterogeinity among patients and fractions, and demonstrated that the applied fractioning technique to sort stem cell sub-populations is an important step to determine pluripotent and differentiation potentials of these cells.
+
+
+To download the data set I first had to download the recommended packages: 
+```{r, setup, message=FALSE, warning = FALSE }
+#here we are installing necessary packages 
+
+# Downloading BiocManager / Checking if it already exists... 
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+library(BiocManager) #library call 
+
+# Downloading GEOmetadb / Checking if it already exists... 
+if (!requireNamespace("GEOmetadb", quietly = TRUE)) 
+  BiocManager::install("GEOmetadb")
+library(GEOmetadb) #library call
+
+# Downloading edgeR / Checking if it already exists... 
+if (!requireNamespace("edgeR", quietly = TRUE))
+  BiocManager::install("edgeR")
+library(edgeR)
+```
+
+After setting up the environment, I found my data set by filtering for stem cell, homo sapiens, submission after 2016, high throughput sequencing. [GSE164692](https://0-www-ncbi-nlm-nih-gov.brum.beds.ac.uk/geo/query/acc.cgi?acc=GSE164692).\ 
+
+Next, I downloaded by data set, which is the supplementary file of the expression counts. Also, as recommended in lecture, I will give a brief overview of the data set. 
+```{r, message=FALSE}
+#Getting the data set 
+#sfiles = getGEOSuppFiles('GSE164692')
+gse164692 <- getGEO("GSE164692",GSEMatrix=FALSE) 
+
+#getting an information overview of the data set. Note on the website it says we have 32 samples, but 33 out 34 were downloaded for some reason. 
+gse164692_gpl <- names(GPLList(gse164692))[1]
+gse164692_gpl_info <- Meta(getGEO(gse164692_gpl))
+```
+
+Info of the data sets author's: country, university affiliation, contact info. 
+```{r, message=FALSE}
+#Info of the data sets author's: country, university affiliation, contact info. 
+data.frame(head(Meta(gse164692)))
+```
+
+**Platform Title:** `r gse164692_gpl_info$title`
+
+**Submission Date:** `r gse164692_gpl_info$submission_date`
+
+**organism:** `r gse164692_gpl_info$organism`
+
+**Number of GEO datasets that use this techology: ** `r length(gse164692_gpl_info$series_id)`
+
+**Number of GEO samples that use this technology :** `r length(gse164692_gpl_info$sample_id)`
+
+**Last Update:** `r gse164692_gpl_info$last_update_date`
+
+
+## Cleaning the data 
+The next step is to clean the data set. For this, we need the supplementary file that contains the expression count. 
+
+```{r, message=FALSE}
+#Getting the data set 
+#Note: there is only one supplementary file, which contains counts. 
+
+sfiles = getGEOSuppFiles('GSE164692')  #this is a repeated step to get the supplementary files
+fnames = rownames(sfiles) #to obtain the row names of the data. These are the different expressions. 
+
+
+#setting check.names = FALSE, otherwise the variable names could be potentially changed. 
+gse164692_exp = read.delim(fnames[1],header=TRUE,
+                check.names = FALSE)
+
+head(gse164692_exp) #this gives a preview of the data counts. 
+
+dim(gse164692_exp) #finding the number of genes for which measurements are available 
+```
+
+As a sanity check, I downloaded the supplementary .txt file manually from the GEO website and compared it to the data frame I obtained from the code above. When initially looking at the preview of the data frame, all the genes for each sample had a count of 0. However, this is also how the .txt file looks when downloading manually. Therefor the filtering step will be really important to remove any genes that have a low expression value in the samples. 
+
+To check if I need to modify the column headers, I will look up the column names. 
+```{r}
+colnames(gse164692_exp)
+```
+
+
+### Defining our sample groups 
+
+I think from reading the headers, it is very obvious what each column is intended to do. For example, in column 2, 'donor_01_F1' indicates that the sample is from fraction 1 of donor 1. We can therefore split them into donor groups with the associated fraction.  
+```{r, results='hide'}
+samples <- data.frame(lapply(colnames(gse164692_exp)[2:33], FUN=function(x){unlist(strsplit(x, split = "_"))[c(2,3)]})) 
+colnames(samples) <- colnames(gse164692_exp)[2:33]
+rownames(samples) <- c("Donor","Fraction")
+samples <- data.frame(t(samples))
+```
+
+Here we are printing out the resulting donors and their fractions
+```{r}
+print(samples)
+```
+
+
+### Checking for Gene Repeats 
+
+Quick check to see if we have any repeated genes within the data set: 
+```{r}
+# count number unique genes in list
+length(unique(gse164692_exp$Symbol))
+
+#count number genes in list 
+length(gse164692_exp$Symbol)
+
+```
+Both options give me the same number of rows/genes, indicating that we probably do not have any repeats
+
+Another sanity check to make sure we have not repeats
+```{r}
+summarized_gene_counts <- sort(table(gse164692_exp$Symbol), decreasing = TRUE)
+#head(summarized_gene_counts)
+knitr::kable(table(gse164692_exp$Symbol)[1:3], format="html")
+#this code is commented out on purpose, since we see that there are no repeats found. 
+# knitr::kable(summarized_gene_counts[which(summarized_gene_counts>1)[1:10]], format="html") 
+
+```
+The table is sorted from highest instance of gene names to lowest. Since the highest number of instances for a gene name is 1 (from the table in the code), we know that there are no repeated genes.
+Looking at the count table file, I can see that there are many genes, which have a very low expression values across all of the samples. Some genes even have 0 expressions for all samples. These genes I can consider removing to look for genes with higher expression levels that have a significance to our results. 
+We will therefor focus on filtering out genes that lack a strong expression signal. 
+
+### Filtering out data 
+EdgeR recommends to remove features without at least 1 repeat per milion in n of samples, where n is the size of the smallest group of replicates. Since the research paper compares different fractions, and there is a total of 4 fractions, we want to obtain, 1 count per million for our smallest sample group, which is 4. 
+Before we actually filter, I will see how many genes are currently in our data set.
+```{r}
+dim(gse164692_exp)
+```
+The data set contains ~26,000 genes. Since many of our samples actually produce a count of 0, for many of the genes, I expect the filtering will remove many outliers from our set. 
+
+Filtering my data set: 
+```{r}
+cpms = cpm(gse164692_exp[,2:33]) #obtaining counts per million for my samples
+rownames(cpms) <- gse164692_exp[,1] 
+
+gse164692_exp = gse164692_exp[rowSums(cpms >1) >=4,] #here we only want cmp's are greater than 1 AND there are 4 of these, therfore we filter all others out of the data set. 
+```
+
+Checking the number of genes left after filtering 
+```{r}
+dim(gse164692_exp)
+```
+We have drastically cut down from ~26,000 genes before filtering to 14,093  genes. 14,093 is a good sample space and will give us good representation of the data set. 
+
+## Map to Hugo Symbols 
+The given count .txt file given from the researchers only contains one gene attribute which are already HGNC symbols. Therefore, I will not have to convert any given Human Ensemble Gene Ids to HGNC symbols for my given data set. 
+
+## Data Normalization 
+
+### Chosing the normalization technique that fits  my data set
+Choosing how to normalize the data set is very important, since different techniques could alter how the data is represented, which can ultimately skew the interpretation of the results. We were given a few different methods to normalize our data including the TMM or RLE method. From reading the required research papers and lecture,  both techniques are similar in that they assume that the genes are not differentially expressed. However, the two techniques differ whereby TMM normalizes across the samples, and RLE normalizes across the gene. Casciaro et al. normalized the edgeR package, and therefore I will also use the TMM method.  
+
+```{r}
+rownames(gse164692_exp) <- gse164692_exp$Symbol #since the symbols are already hugo symbols 
+
+gse164692_exp <- subset(gse164692_exp, select = -c(Symbol)) #remove the symbol column from our data set
+
+filtered_data_matrix <- as.matrix(gse164692_exp[,1:32]) #covert data set to a matrix representation 
+rownames(filtered_data_matrix) <- gse164692_exp$Symbol
+
+d = DGEList(counts=filtered_data_matrix, group=samples$Fractions) 
+
+d = calcNormFactors(d, method="TMM") #normalize data through the TMM method. 
+normalized_gse164692_counts <- cpm(d) #this creates a data matrix of the normalized gene counts. 
+```
+
+## Plotting the data 
+To see if the normalization of my data had any significant effect on the data, I will compare the non-normalized data to the normalized data set. We will use a multi-dimensional scale plot, density plot and box plot and BCV plot. 
+
+### Plotting sample through PlotMDS 
+
+PlotMDS can be used to see how well my experimental design is working in practice, by comparing single samples comparing to other samples on the plot. Ideally, samples with similaire expression will cluster together. 
+```{r}
+plotMDS(d, labels=rownames(samples), col = c("darkgreen", "blue", "red", "orange", "chocolate")[factor(samples$Fraction)], main = " plotMDS Normalized GSE164692 counts Samples")
+```
+
+The difference between donors, and even fractions is quite noticeable, which Casciaro et al. also noticed. These high differences between donors can be associated to high heterogeneity among patients and fractions, explained by Casciaro et al.. 
+Interesingly, researchers note that Fractions 3 and 4 have similar expression levels, but also differences, which can account for the variability we see. 
+
+```{r, message=FALSE}
+sampleplot <- log2(cpm(gse164692_exp[]))
+normplot <- log2(normalized_gse164692_counts[])
+```
+
+##### Density Plot
+
+###### Non- Normalized Density Plots 
+```{r, message=FALSE}
+
+sample_density <- apply(log2(cpm(gse164692_exp)), 
+                        2, density)
+norm_density <- apply(log2(normalized_gse164692_counts), 
+                             2, density)
+
+
+# limits across samplesthis is for both the normalized and non-normalized plot. 
+xlim <- 0; ylim <- 0
+for (i in 1:length(sample_density)) {
+  xlim <- range(c(xlim, sample_density[[i]]$x)); # for non-norm. plot 
+  xlim <- range(c(xlim, norm_density[[i]]$x)); # for norm. plot 
+  ylim <- range(c(ylim, sample_density[[i]]$y)); # for non-norm. plot 
+  ylim <- range(c(ylim, norm_density[[i]]$y)) # for norm. plot 
+}
+
+cols <- rainbow(length(sample_density)) # limits of the samples 
+ltys <- rep(1, length(sample_density))
+
+#non-normalized density plot 
+plot(sample_density[[1]], xlim=xlim, ylim=ylim, type="n", 
+     ylab="Smoothing density of log2-CPM", 
+     main="Non- Normalized GSE164692 Samples", cex.lab = 0.85)
+
+for (i in 1:length(sample_density)) #plot each of the column lines
+  lines(sample_density[[i]], col=cols[i], lty=ltys[i])
+
+legend("topright", colnames(normplot), 
+       col=cols, lty=ltys, cex=0.75, 
+       border ="blue", text.col = "orange", 
+       merge = TRUE, bg = "aliceblue")  #create legend
+```
+
+###### Normalized Density Plot
+
+```{r, message=FALSE}
+
+cols <- rainbow(length(norm_density))
+ltys <- rep(1, length(norm_density))
+
+#normalized density plot 
+plot(norm_density[[1]], xlim=xlim, ylim=ylim, type="n", 
+     ylab="Smoothing density of log2-CPM", 
+     main="Normalized GSE164692 Samples Density Plot", cex.lab = 0.85)
+
+for (i in 1:length(norm_density)) #plot each of the column lines
+  lines(norm_density[[i]], col=cols[i], lty=ltys[i])
+
+legend("topright", colnames(normplot), 
+       col=cols, lty=ltys, cex=0.75, 
+       border ="red", text.col = "orange", 
+       merge = TRUE, bg = "aliceblue")  #create legend
+```
+
+From an initial comparison of the two density plot, there is no signficant difference between them. However, upon closer inspection, you can see that the lines are a bit tighter on the normalized plot, indicating that the normalization did have an effect on the data. 
+##### Box Plot 
+
+###### Sample Box Plot 
+```{r, message=FALSE, warning = FALSE}
+#sampleplot <- log2(cpm(gse164692_exp[]))
+boxplot(sampleplot, xlab = "Samples", ylab = "log2 CPM", 
+        las = 2, cex = 0.5, cex.lab = 0.5,
+        cex.axis = 0.5, main = "Non-Normalized GSE164692 counts Samples")
+
+
+abline(h = median(apply(sampleplot, 2, median)), 
+       col = "blue", lwd = 0.6, lty = "dashed") # median on each box plot
+```
+
+###### Normalized Box Plot 
+```{r, message=FALSE, warning = FALSE}
+#normplot <- log2(normalized_gse164692_counts[])
+boxplot(normplot, xlab = "Samples", ylab = "log2 CPM", 
+        las = 2, cex = 0.5, cex.lab = 0.5,
+        cex.axis = 0.5, main = "Normalized GSE164692 counts Samples")
+
+abline(h = median(apply(normplot, 2, median)), 
+       col = "blue", lwd = 0.6, lty = "dashed") # median on each box plot
+```
+
+Again, the normalized and non-normalized box plot do not show a drastic difference between them, and the distribution is very similaire in both plots. 
+
+#### Biological Co-efficient of Variation (BCV) Plot 
+
+BCV Plots can be used to to look at dispersions and find potential outliers for the samples. 
+
+```{r, message=FALSE}
+#BCV Plot
+model <- model.matrix(~samples$Donor
+                             + samples$Fraction+0)
+d <- estimateDisp(d, model)
+plotBCV(d,col.tagwise = "black",col.common = "red",) 
+```
+
+
+Each of the dots in the given BVC plot is a gene from our data set. In the graph, we can see that the higher the expression value of the gene, the lower the dispersion becomes (i.e. dispersion decreases from left to right indicating a low variation for genes with high expression). I believe this is a good indicator that the normalization removed some of the outliers from the data set. 
+
+# Final Data Frame 
+
+```{r}
+normalized_gse164692_counts <- as.data.frame(normalized_gse164692_counts)
+rownames(normalized_gse164692_counts) <- gse164692_exp$Symbol
+#head(normalized_gse164692_counts) #commented out on purpose, per assignment handout
+```
+
+
+## Interpreting Results 
+
+### What are the control and test conditions of the dataset? 
+
+The study compared physical paramters of hAFSCs through cell sorting fractions. Cells were initially selected from donors based on the stem cell factor receptor c-kit and then sorted by their physical parameters into two sub-populations. This study, compared to others did not have clear control and mutated sample groups but instead different populations such as Sub-population 1 consisting of cells from fraction 1 and 2, and Sub-population 2 consisting of cells from fraction 3 and 4. The two sub-populations were tested for pluripotency and differentiation potential. However, due to the origin of the cells (aminiotic fluid), the populations are very heterogeneous, something that was obvious in the data set. 
+
+### Why is the dataset of interest to you?
+I have a strong interest in stem cell research through previous courses. I think stem cells have an immense therapeutic potential. There is a lot of research that still needs to be done until stem cell therapies can be safely used. The study by Casciaro et al. investigates Human amniotic fluid stem cells (hAFSCs) cells and applies fractioning technique to characterise the sub-populations of the hAFSCs. A main goal of this study is to demonstrate the importance of using these fractioning techniques since it was not clear if sub-populations in hAFSCs exist before this study. In addition, fractioning can help find sub-populations with the highest regenerative and differential potential. TO  actually characterise the cells in the fractions researchers had to use RNA-seq analysis. The data therefor compares the 4 different fractions of 8 different donors (pregnant women) for a total of 32 samples. Interestingly, the data is not as clear cut as other data sets, where researchers compare RNA data of knockdown vs control types. The data sets actually demonstrated the high heterogeneity among patients, and the fractions. Therefore, I found the MDS plot the most interesting where the hetergeinity among donors is very notiable. 
+
+### Were there expression values that were not unique for specific genes? How did you handle these?
+There were no expression value that were not unique for specific genes. Therefore, I had to no processing for this step. 
+
+### Were there expression values that could not be mapped to current HUGO symbols?
+The only given gene identifier for all genes were the HUGO symbols. This simplified the processing step.
+
+### How many outliers were removed?
+
+After cleaning and filtering the data set, I was able to remove 12,392 outlier genes.  
+
+### How did you handle replicates?
+The data set columns were labelled based on the donors and sub-divided into specific fractions (ex. "donor_01_F1"). Each donor had their cell populations split into 4 fractions, which were then analysed through RNA seq. Interestingly, many of the donors did not have a sample for fraction 1, which may be due to them not having these types of cell populations in their original cell population. Since we had 4 fractions and a another sample for all cell populations, I removed genes where there was not 1 count per million for our smallest sample group. 
+
+### What is the final coverage of your dataset?
+The final coverage for my data set is 14,093 genes. The original coverage was ~16,00 before filtering/cleaning the data set. 
+
+## Citation 
+
+Casciaro, F., Zia, S., Forcato, M., Zavatti, M., Beretti, F., Bertucci, E., Zattoni, A., Reschiglian, P., Alviano, F., Bonsi, L., Follo, M. Y., Demaria, M., Roda, B., & Maraldi, T. (2021). Unravelling Heterogeneity of Amplified Human Amniotic Fluid Stem Cells Sub-Populations. Cells, 10(1), 158. https://doi.org/10.3390/cells10010158
+
+Steipe, B., & Isserlin, R. (Edited). (2022). R-basics https://bcb420-2022.github.io/R_basics/
+
+Ruth Isserlin, Course Lectures (2022)
+
+# [END]
