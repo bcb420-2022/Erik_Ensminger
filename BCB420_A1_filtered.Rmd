@@ -1,0 +1,288 @@
+---
+title: "BCB420_A1_combined"
+output: html_document
+---
+
+## Selecting an Expression Data set 
+
+We first need to select the appropriate expression data set. Due to my interest in stem cells, I wanted to focus on studies, which had something to do with this field. I followed the steps to finding a GEO expression data set from lecture in R studio. From there, I filtered for stem cells and chose a study which focuses on amniotic fluid stem cells (haFSCs) of homos apiens with 32 samples. Here is a link to the GEO page: [GSE164692](https://0-www-ncbi-nlm-nih-gov.brum.beds.ac.uk/geo/query/acc.cgi?acc=GSE164692)
+
+Note: Many of the steps are adapted from Professors Isserlin's lectures. 
+
+To download the data set I first had to download the recommended packages: 
+```{r, setup, message=FALSE}
+#here we are installing necessary packages 
+
+# Downloading BiocManager / Checking if it already exists... 
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+library(BiocManager) #library call 
+
+# Downloading GEOmetadb / Checking if it already exists... 
+if (!requireNamespace("GEOmetadb", quietly = TRUE)) 
+  BiocManager::install("GEOmetadb")
+library(GEOmetadb) #library call
+
+# Downloading edgeR / Checking if it already exists... 
+if (!requireNamespace("edgeR", quietly = TRUE))
+  BiocManager::install("edgeR")
+library(edgeR)
+```
+
+After setting up the environment, I found my data set by filtering through filtering for stem cell, homo sapiens, submission after 2016, high throughput sequencing. [GSE164692](https://0-www-ncbi-nlm-nih-gov.brum.beds.ac.uk/geo/query/acc.cgi?acc=GSE164692).\ 
+
+Next, I downloaded by data set, which is the supplementary file of the expression counts. Also, as recommended in lecture, I will give a brief overview of the data set. 
+```{r, message=FALSE}
+#Getting the data set 
+#sfiles = getGEOSuppFiles('GSE164692')
+gse164692 <- getGEO("GSE164692",GSEMatrix=FALSE) 
+
+#getting an information overview of the data set. Note on the website it says we have 32 samples, but 33 out 34 were downloaded for some reason. 
+gse164692_gpl <- names(GPLList(gse164692))[1]
+gse164692_gpl_info <- Meta(getGEO(gse164692_gpl))
+```
+
+Info of the data sets author's: country, university affiliation, contact info. 
+```{r, message=FALSE, results='hide'}
+#Info of the data sets author's: country, university affiliation, contact info. 
+data.frame(head(Meta(gse164692)))
+```
+
+**Platform Title:** `r gse164692_gpl_info$title`
+
+**Submission Date:** `r gse164692_gpl_info$submission_date`
+
+**organism:** `r gse164692_gpl_info$organism`
+
+**Number of GEO datasets that use this techology: ** `r length(gse164692_gpl_info$series_id)`
+
+**Number of GEO samples that use this technology :** `r length(gse164692_gpl_info$sample_id)`
+
+**Last Update:** `r gse164692_gpl_info$last_update_date`
+
+
+## Cleaning the data 
+The next step is to clean the data set. For this, we need the supplementary file that contains the expression count. 
+
+```{r, message=FALSE, results='hide'}
+#Getting the data set 
+#Note: there is only one supplementary file, which contains counts. 
+
+sfiles = getGEOSuppFiles('GSE164692')  #this is a repeated step to get the supplementary files
+fnames = rownames(sfiles) #to obtain the row names of the data. These are the different expressions. 
+
+
+#setting check.names = FALSE, otherwise the variable names could be potentially changed. 
+gse164692_exp = read.delim(fnames[1],header=TRUE,
+                check.names = FALSE)
+
+head(gse164692_exp) #this gives a preview of the data frame of 6 genes and their counts. 
+
+dim(gse164692_exp) #finding the number of genes for which measurements are available 
+```
+
+As a sanity check, I downloaded the supplementary .txt file manually from the GEO website and compared it to the data frame I obtained from the code above. They seem to be the same. 
+
+To check if I need to modify the column headers, I will look up the column names. 
+```{r}
+colnames(gse164692_exp)
+```
+
+
+### Defining our sample groups 
+
+I think from reading the headers, it is very obvious what each column is intended to do. For example, in column 2, 'donor_01_F1' indicates that the sample is from fraction 1 of donor 1. We can therefore split them into donor groups with the associated fraction.  
+```{r, results='hide'}
+samples <- data.frame(lapply(colnames(gse164692_exp)[2:33], FUN=function(x){unlist(strsplit(x, split = "_"))[c(2,3)]})) 
+colnames(samples) <- colnames(gse164692_exp)[2:33]
+rownames(samples) <- c("Donor","Fraction")
+samples <- data.frame(t(samples))
+```
+
+Here we are printing out the resulting donors and their fractions
+```{r, results='hide'}
+print(samples)
+```
+
+
+### Checking for Gene Repeats 
+Quick check 
+```{r}
+# Looking if all genes are unique in list.
+length(gse164692_exp$Symbol)
+# Compared to the number of unique genes in the list.
+length(unique(gse164692_exp$Symbol))
+```
+
+Another sanity check to make sure we have not repeats
+```{r}
+summarized_gene_counts <- sort(table(gse164692_exp$Symbol), decreasing = TRUE)
+#head(summarized_gene_counts)
+knitr::kable(table(gse164692_exp$Symbol)[1:3], format="html")
+#this code is commented out on purpose, since we see that there are no repeats found. 
+# knitr::kable(summarized_gene_counts[which(summarized_gene_counts>1)[1:10]], format="html") 
+
+```
+The table is sorted from highest instance of gene names to lowest. Since the highest number of instances for a gene name is 1 (from the table in the code), we know that there are no repeated genes.
+Looking at the count table file, I can see that there are many genes, which have a very low expression values across all of the samples. Some genes even have 0 expressions for all samples. These genes I can consider removing to look for genes with higher expression levels that have a significance to our results. 
+We will therefor focus on filtering out genes that lack a strong expression signal. 
+
+### Filtering out data 
+EdgeR recommends to remove features without at least 1 repeat per milion in n of samples, where n is the size of the smallest group of replicates. Since the research paper compares different fractions, and there is a total of 4 fractions, we want to obtain, 1 count per million for our smallest sample group, which is 4. 
+Doing this to our data set: 
+```{r}
+cpms = cpm(gse164692_exp[,2:33]) #obtaining counts per million for my samples
+rownames(cpms) <- gse164692_exp[,1] 
+# Filtering low-occurrence entries to fam83_exp.
+gse164692_exp = gse164692_exp[rowSums(cpms >1) >=4,] #here we only want cmp's are greater than 1 AND there are 4 of these 
+```
+
+Checking the number of genes left. 
+```{r}
+dim(gse164692_exp)
+```
+We have drastically cut down from ~16,000 genes before filtering to 14,093  genes. 14,093 is still a good sample space and will give us good representation of the data set. 
+
+## Map to Hugo Symbols 
+The given count .txt file given from the researchers only contains one gene attribute which are already HGNC symbols. Therefore, I will not have to convert any given Human Ensemble Gene Ids to HGNC symbols for my given data set. 
+
+## Data Normalization 
+
+### Chosing the right normalization technique 
+Choosing how to normalize and represent technique to use is very important, since different techniques could alter how the data is represented, which can ultimately skew the interpretation of the results. We were given a few different ways to normalize our data including the TMM or RLE method. From reading the required research papers and lecture,  both techniques are similar in that they assume that the genes are not differentially expressed. However, the two techniques differ whereby TMM normalizes across the samples, and RLE normalizes across the gene. Casciaro et al. normalized the edgeR package, and therefore I will also use the TMM method.  
+
+
+```{r}
+rownames(gse164692_exp) <- gse164692_exp$Symbol #since the symbols are already hugo symbols 
+
+gse164692_exp <- subset(gse164692_exp, select = -c(Symbol))
+
+filtered_data_matrix <- as.matrix(gse164692_exp[,1:32])
+rownames(filtered_data_matrix) <- gse164692_exp$Symbol
+
+d = DGEList(counts=filtered_data_matrix, group=samples$Fractions)
+
+d = calcNormFactors(d, method="TMM")
+normalized_gse164692_counts <- cpm(d) #this creates a data matrix of the normalized gene counts. 
+```
+
+### Plotting sample through PlotMDS 
+
+PlotMDS can be used to see how well my experimental design is working in practice, by compare single samples comparing to other samples on the plot. Ideally, samples with similaire expression will cluster together. 
+```{r}
+plotMDS(d, labels=rownames(samples), col = c("darkgreen", "blue", "red", "orange", "chocolate")[factor(samples$Fraction)], main = " plotMDS Normalized GSE164692 counts Samples")
+```
+
+Here the difference between patients, and even fractions is quite noticeable, which Casciaro et al. also noticed. These high differences between donors can be associated to high heterogeneity among patients and fractions, explained by Casciaro et al.. Researchers note that Fractions 3 and 4 have similar expression levels, but also differences, which can account for the variability we see. 
+
+## Plotting the data 
+
+```{r, message=FALSE}
+sampleplot <- log2(cpm(gse164692_exp[]))
+normplot <- log2(normalized_gse164692_counts[])
+```
+
+##### Density Plot
+
+###### Sample Density Plots 
+```{r, message=FALSE}
+
+sample_density <- apply(log2(cpm(gse164692_exp)), 
+                        2, density)
+norm_density <- apply(log2(normalized_gse164692_counts), 
+                             2, density)
+#calculate the limits across all the samples
+xlim <- 0; ylim <- 0
+for (i in 1:length(sample_density)) {
+  xlim <- range(c(xlim, sample_density[[i]]$x));
+  xlim <- range(c(xlim, norm_density[[i]]$x));
+  ylim <- range(c(ylim, sample_density[[i]]$y));
+  ylim <- range(c(ylim, norm_density[[i]]$y))
+}
+#calculate the limits across all the samples
+cols <- rainbow(length(sample_density))
+ltys <- rep(1, length(sample_density))
+#plot the first density plot to initialize the plot
+plot(sample_density[[1]], xlim=xlim, ylim=ylim, type="n", 
+     ylab="Smoothing density of log2-CPM", 
+     main="FAM83H-AS1 Samples", cex.lab = 0.85)
+#plot each line
+for (i in 1:length(sample_density)) 
+  lines(sample_density[[i]], col=cols[i], lty=ltys[i])
+#create legend
+legend("topright", colnames(normplot), 
+       col=cols, lty=ltys, cex=0.75, 
+       border ="blue", text.col = "orange", 
+       merge = TRUE, bg = "aliceblue") 
+#DENSITY PLOT 2 NORM
+#calculate the limits across all the samples
+cols <- rainbow(length(norm_density))
+ltys <- rep(1, length(norm_density))
+#plot the first density plot to initialize the plot
+plot(norm_density[[1]], xlim=xlim, ylim=ylim, type="n", 
+     ylab="Smoothing density of log2-CPM", 
+     main="Normalized FAM83H-AS1 Samples", cex.lab = 0.85)
+#plot each line
+for (i in 1:length(norm_density)) 
+  lines(norm_density[[i]], col=cols[i], lty=ltys[i])
+#create legend
+legend("topright", colnames(normplot), 
+       col=cols, lty=ltys, cex=0.75, 
+       border ="red", text.col = "orange", 
+       merge = TRUE, bg = "aliceblue") 
+```
+
+
+##### Box Plot 
+
+###### Sample Box Plot 
+```{r, message=FALSE}
+#sampleplot <- log2(cpm(gse164692_exp[]))
+boxplot(sampleplot, xlab = "Samples", ylab = "log2 CPM", 
+        las = 2, cex = 0.5, cex.lab = 0.5,
+        cex.axis = 0.5, main = "Original GSE164692 counts Samples")
+#draw the median on each box plot
+abline(h = median(apply(sampleplot, 2, median)), 
+       col = "blue", lwd = 0.6, lty = "dashed")
+```
+
+###### Normalized Box Plot 
+```{r, message=FALSE}
+#normplot <- log2(normalized_gse164692_counts[])
+boxplot(normplot, xlab = "Samples", ylab = "log2 CPM", 
+        las = 2, cex = 0.5, cex.lab = 0.5,
+        cex.axis = 0.5, main = "Normalized GSE164692 counts Samples")
+#draw the median on each box plot
+abline(h = median(apply(normplot, 2, median)), 
+       col = "blue", lwd = 0.6, lty = "dashed")
+```
+
+
+#### Biological Co-efficient of Variation (BVC) Plot 
+
+BVC Plots can be used to to look at dispersons and find potential outliers for the samples. 
+
+```{r, message=FALSE}
+#BVC Plot
+model <- model.matrix(~samples$Donor
+                             + samples$Fraction+0)
+d <- estimateDisp(d, model)
+plotBCV(d,col.tagwise = "black",col.common = "red",) #plot
+```
+Each of the dots in the given BVC plot is a gene from our data set. In the graph, we can see that the higher the expression value of the gene, the lower the dispersion becomes (i.e. dispersion decreases from left to right indicating a low variation for genes with high expression). 
+
+## Interpreting Results 
+
+### What are the control and test conditions of the dataset? 
+
+### Why is the dataset of interest to you?
+
+### Were there expression values that were not unique for specific genes? How did you handle these?
+
+### Were there expression values that could not be mapped to current HUGO symbols?
+
+### How many outliers were removed?
+
+### How did you handle replicates?
+
+### What is the final coverage of your dataset?
