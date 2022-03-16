@@ -1,0 +1,769 @@
+---
+title: "BCB420 Assignment 2: Differential Gene expression and Preliminary ORA "
+author: "Erik Ensminger" 
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+## Table of Contents 
+##### Review of Assignment 1 approaches 
+##### Loading Dataset from A1 
+##### Heatmaps
+##### Model and Computing the Differential Expression
+##### Gene List Enrichment Analysis 
+##### Interpretation
+##### Citation 
+
+Notes Figures to the Gene Enrichment Analysis section can be found in the A2 journal: https://github.com/bcb420-2022/Erik_Ensminger/wiki/J7:-Assignment-%232 
+
+# Review of Assignment 1 approaches 
+## Selecting an Expression Data set 
+
+We first need to select the appropriate expression data set. Due to my interest in stem cells, I wanted to focus on studies, which had something to do with this field. I followed the steps to finding a GEO expression data set from lecture in R studio. From there, I filtered for stem cells and chose a study which focuses on amniotic fluid stem cells (haFSCs) of homos apiens with 32 samples. Here is a link to the GEO page: [GSE164692](https://0-www-ncbi-nlm-nih-gov.brum.beds.ac.uk/geo/query/acc.cgi?acc=GSE164692)
+
+### Brief Overview of Research Paper - and data set 
+
+The study by Casciaro et al. focuses on using fractioning technique to characterise the sub-populations of haFSCs and determine the stemness of these cells. haFSC populations used for RNA-seq data were obtained from 8 pregnant women, known as the donors in the count file. Each of the donors haFSCs population were sorted through Non-Equilibrium Earth Gravity Assisted Field Flow Fractionation principles, whereby cells were run through a fraction. There were 4 different fractions by which  these cells were sorted. Looking at the gene count file of this study, the columns contain the samples and are each represented through a 'donor_#_F#' code. 'Donor_#' represents from which donor the sample is from and 'F#' is which fraction the sample is from. 
+Overall, the study found high heterogeinity among patients and fractions, and demonstrated that the applied fractioning technique to sort stem cell sub-populations is an important step to determine pluripotent and differentiation potentials of these cells.
+
+
+To download the data set I first had to download the recommended packages: 
+
+```{r, setup, message=FALSE, warning = FALSE }
+#here we are installing necessary packages 
+
+# Downloading BiocManager / Checking if it already exists... 
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+library(BiocManager) #library call 
+
+# Downloading GEOmetadb / Checking if it already exists... 
+if (!requireNamespace("GEOmetadb", quietly = TRUE)) 
+  BiocManager::install("GEOmetadb")
+library(GEOmetadb) #library call
+
+# Downloading edgeR / Checking if it already exists... 
+if (!requireNamespace("edgeR", quietly = TRUE))
+  BiocManager::install("edgeR")
+library(edgeR)
+
+library(devtools)
+
+install_github("jokergoo/ComplexHeatmap")
+library(ComplexHeatmap) 
+library(circlize)
+```
+
+
+# Loading our final dataset from A1
+
+If you are unable to download the data, the file will be in my readme repository: https://github.com/bcb420-2022/Erik_Ensminger
+```{r, message=FALSE, warning = FALSE }
+normalized_count_data <- read.table(file=file.path(getwd(),
+                "normalized_counts_A1.txt"),
+                                    header = TRUE,sep = "\t",
+                                    stringsAsFactors = FALSE,
+                                   check.names=FALSE)
+
+```
+
+# Creating a matrix for Heat Map 
+
+```{r, message=FALSE, warning = FALSE }
+
+heatmap_matrix <- normalized_count_data[1:2000,
+                      1:ncol(normalized_count_data)]
+
+#for the column names we will use the samples again...
+colnames(heatmap_matrix) <- colnames(normalized_count_data[,
+                        1:ncol(normalized_count_data)])
+```
+
+
+# creating the Heat Map 
+
+The heat map is used to represent the sample and gene numerical  values on a  colour scale. This can help visualize the gene frequencies.
+```{r, message=FALSE, warning = FALSE }
+library(ComplexHeatmap) 
+library(circlize)
+
+if(min(heatmap_matrix) == 0){
+heatmap_col = colorRamp2(c( 0, max(heatmap_matrix)),
+                         c( "white", "red"))
+
+} else {
+heatmap_col = colorRamp2(c(min(heatmap_matrix), 0,max(heatmap_matrix)), c("blue", "white", "red"))
+}
+current_heatmap <- Heatmap(as.matrix(heatmap_matrix),
+      show_row_dend = TRUE,show_column_dend = TRUE,
+      col=heatmap_col,show_column_names = TRUE,
+      show_row_names = FALSE,show_heatmap_legend = TRUE)
+
+
+```
+
+# To visualize the heat map
+```{r, message=FALSE, warning = FALSE }
+#to show the heat map
+#getting error 
+#Error in getFromNamespace(device_info[3], ns = device_info[2])(temp_image) : unable to open /var/folders/9n/kjznw9r57qvcp31kly54ch000000gn/T//RtmpyPxpPC/.heatmap_body_19032b2e54af80fda32ce584a947fa65_1_113cd57f3b80e.png
+plot(current_heatmap)
+#dev.off()
+```
+
+## Scaling Matrix for heat Map 
+We can now scale our  matrix whereby the rows will normalize each gene. Eac 
+
+```{r, message=FALSE, warning = FALSE }
+library(ComplexHeatmap) 
+library(circlize)
+
+heatmap_matrix <- t(scale(t(heatmap_matrix))) 
+
+if(min(heatmap_matrix) == 0){
+heatmap_col = colorRamp2(c( 0, max(heatmap_matrix)),
+                         c( "white", "red"))
+
+} else {
+heatmap_col = colorRamp2(c(min(heatmap_matrix), 0,max(heatmap_matrix)), c("blue", "white", "red"))
+}
+current_heatmap <- Heatmap(as.matrix(heatmap_matrix),
+      show_row_dend = TRUE,show_column_dend = TRUE,
+      col=heatmap_col,show_column_names = TRUE,
+      show_row_names = FALSE,show_heatmap_legend = TRUE)
+
+current_heatmap 
+```
+
+
+# P-test
+
+## Grouping samples by Fraction
+In the experiment, researchers focused on comparing the different fractions of patients, to deterime if fractions were able to sort the pluripotent cells in some specific qualitative manner. 
+Thereby, I will group the samples into 5 different groups: Fraction 1, Fraction 2, Fraction 3, Fraction 4, and Fraction total. 
+
+
+```{r, message=FALSE, warning = FALSE }
+
+#Grouping all the samples from Fraction 1 
+F1_samples <- grep(colnames(normalized_count_data),
+                          pattern="\\F1")
+#Grouping all the samples from Fraction 2 
+F2_samples <- grep(colnames(normalized_count_data),
+                          pattern="\\F2")
+
+#Grouping all the samples from Fraction 3
+F3_samples <- grep(colnames(normalized_count_data),
+                          pattern="\\F3")
+
+#Grouping all the samples from Fraction 4
+F4_samples <- grep(colnames(normalized_count_data),
+                          pattern="\\F4")
+
+#Grouping all the samples which contain a all the fraction samples (a total)
+Ftot_samples <- grep(colnames(normalized_count_data),
+                          pattern="\\Ftot")
+
+```
+
+## Selecting our gene of interest
+
+I next selected  a gene of interest.  An important gene in stem cells is p53. When p53 is active in pluripotent stem cells, it stops cells from further dividing and promotes these cells to differentiate and the formation of progenitor cells. 
+Note in the paper, researchers did not look at the gene expression of F1 fraction, due to the high cell aggregate content in the cell. 
+p53 hugo symbol: https://www.genenames.org/data/gene-symbol-report/#!/hgnc_id/HGNC:11998
+
+```{r, message=FALSE, warning = FALSE }
+#Selecting our gene of interest. The hugo id for the p53 gene in the  data set is TP53. 
+gene_of_interest <- which(rownames(normalized_count_data) == "TP53")
+```
+
+## Comparing the F3 and F4 fractions
+Researchers in the paper also found that p53, was upregulated in fraction F4 compared to F3. Therefore we will also compare these sample grouups (3.3. Transcriptomic Profiles of Different hAFSCs Fractions)
+### F4 Fraction 
+```{r, message=FALSE, warning = FALSE }
+#Selecting our gene of interest. The hugo id for the p53 gene in the  data set is TP53. 
+p53_F4_samples <-
+  t(normalized_count_data
+  [gene_of_interest,
+    F4_samples])
+colnames(p53_F4_samples) <-
+  c("p53_F4")
+
+p53_F4_samples
+```
+
+### F3 Fraction 
+Here we
+```{r, message=FALSE, warning = FALSE }
+p53_F3_samples <-
+  t(normalized_count_data
+  [gene_of_interest,
+    F3_samples])
+colnames(p53_F3_samples) <-
+  c("p53_F3")
+
+p53_F3_samples
+```
+
+### P-test results 
+```{r, message=FALSE, warning = FALSE }
+ t.test(x=t(p53_F3_samples),y=t(p53_F4_samples))
+```
+Based on the results, a p- value of 0.1733, there is no significant difference between the expression of fraction f3 and fraction f4 expression of p53. Some thing to note, is that patients have a biological variation or heterogeneity as the researchers noted. We therefore need to account for this difference in the groups. 
+
+## MDS plot 
+To verify our assumption that there is a large hetergenouity between the donors, we can use a MDS plot. 
+In this plot, we can plot based on patient. Based  on the plot, it is clear that the patients fractions cluster together, indicating that it does not matter as much what fraction we are looking at, but instead the patient, due to the high heterogeneity. 
+
+```{r}
+pat_colors <- rainbow(10)
+pat_colors <- unlist(lapply(pat_colors,FUN=function(x){rep(x,2)}))
+limma::plotMDS(heatmap_matrix,
+               col = pat_colors)
+```
+
+# Model and Computing the Differential Expression  
+
+There is a large heterogeneity among the donors in the research study. In order to account for these large differences and be able to accurately compare the different fractions f1, f2, f3, f4, ftot, we must produce a model that splits up the different donors and their fraction. 
+
+## Building the samples 
+this is a very simple model and just a quick check into the different groups/samples we can create.
+```{r}
+
+samples <- data.frame( lapply(colnames(normalized_count_data)[1:32], FUN=function(x){
+          unlist(strsplit(x, split = "\\_"))[c(2,3)]}))
+colnames(samples) <- colnames(normalized_count_data)[1:32]
+rownames(samples) <- c("Donors","Fraction")
+samples <- data.frame(t(samples))
+
+samples[1:8,]
+
+
+model_design <- model.matrix(~ samples$Fraction )
+knitr::kable(model_design, type="html")
+```
+
+
+## Creating our new data matrix   
+we need to fit a new 
+```{r}
+expressionMatrix <- as.matrix(normalized_count_data[,1:32])
+rownames(expressionMatrix) <-
+  rownames(normalized_count_data)
+colnames(expressionMatrix) <-
+  colnames(normalized_count_data)[1:32]
+minimalSet <- ExpressionSet(assayData=expressionMatrix)
+```
+
+we now need to fit our data to model in order to do the next steps of differential expression. 
+```{r}
+fit <- lmFit(minimalSet, model_design)
+```
+
+### Computing the differnetial expression
+
+We now have to apply the empirical bayes for the differential expression computation of my model. The result should be able to tell if the genes are differentially expressed given the model. 
+```{r}
+
+fit2 <- eBayes(fit,trend=TRUE)
+
+#fit our model and adjust to multiple hypothesis testing 
+topfit <- topTable(fit2,
+                   coef=ncol(model_design),
+                   adjust.method = "BH",
+                   number = nrow(expressionMatrix))
+
+ 
+#merge hgnc names to topfit table
+
+output_hits <- merge(normalized_count_data[,1],topfit,by.y=0,by.x=1,all.y=TRUE)
+
+#sort by pvalue
+output_hits <- output_hits[order(output_hits$P.Value),]
+
+knitr::kable(output_hits[1:10,],type="html",row.names = FALSE) 
+```
+
+#### How many genes pass threshold p-value < 0.05?
+
+There are 224 genes  in my data set that were able to the threshold of 0.05. This is not very good. 
+```{r}
+length(which(output_hits$P.Value < 0.05))
+```
+
+We can also look at the p value adjustment/ correction. 
+
+#### How many genes pass correction?
+
+As the number of tests increases, we need to filter out the randomness  of positive values. To control this randomness, we can correct adj.P.Val through the Benjamin Hochberg method. 
+Other methods, that were available to adjust the P value is the Bonferonni method, however, this method may remove many of the results and can therefore be too restrictive, as p-values  are multiplied by the number of comparisons. 
+
+In our data set, there are 0 genes, that pass correction. We therefore need to adjust our model even further to account for the heterogeneity. 
+```{r}
+length(which(output_hits$adj.P.Val < 0.05))
+```
+
+
+### New Model to account for heterogeneity. 
+We can therefore adjust the model to factor in the importance from which donor the fraction oringinates. 
+```{r}
+model_design_pat <- model.matrix(
+  ~ samples$Donors + samples$Fraction)
+knitr::kable(model_design_pat[1:10,],type="html")
+```
+
+We now need to fit our data to the above model, and 
+```{r}
+
+fit_pat <- lmFit(minimalSet, model_design_pat)
+
+fit2_pat <- eBayes(fit_pat,trend=TRUE)
+
+#Again, we will adjust for multiple hypothesis testing, through adjust.method = "BH" 
+topfit_pat <- topTable(fit2_pat,
+                   coef=ncol(model_design_pat),
+                   adjust.method = "BH",
+                   number = nrow(expressionMatrix))
+#merge hgnc names to topfit table
+output_hits_pat <- merge(normalized_count_data[,1],
+                         topfit_pat,by.y=0,by.x=1,all.y=TRUE)
+#output_hits_pat <- topfit_pat
+#sort by pvalue
+output_hits_pat <- output_hits_pat[order(output_hits_pat$P.Value),]
+```
+
+Outputting the top 10 hits, we can see that the p-values have changed and demonstrate a significance, but nothing passed correction again.  
+```{R}
+knitr::kable(output_hits_pat[1:10,],type="html",row.names = FALSE)
+```
+
+To verify, we can check the number of signficant p-values. Now, the number of signficant p-values has increased to 496. 
+```{r}
+length(which(output_hits_pat$P.Value < 0.05))
+```
+
+We can also check the number of singificant p-values that pass correction. Again, no genes pass correction again. 
+Ignoring the number of p-values that pass correction, our model does show an improvement as we were able to increase the number of signficant p-values. 
+```{r}
+length(which(output_hits_pat$adj.P.Val < 0.05))
+```
+
+## Further comparing the results from our two models. 
+
+```{r}
+
+simple_model_pvalues <- data.frame(hgnc_sym =
+  rownames(output_hits),
+  simple_pvalue=output_hits$P.Value)
+
+pat_model_pvalues <-  data.frame(hgnc_sym =
+  rownames(output_hits_pat),
+  donor_pvalue = output_hits_pat$P.Value)
+
+two_models_pvalues <- merge(simple_model_pvalues,
+  pat_model_pvalues,by.x=1,by.y=1)
+
+two_models_pvalues$colour <- "black"
+two_models_pvalues$colour[
+  two_models_pvalues$simple_pvalue<0.05] <- "orange"
+two_models_pvalues$colour[
+  two_models_pvalues$donor_pvalue<0.05] <- "blue"
+two_models_pvalues$colour[
+  two_models_pvalues$simple_pvalue<0.05 &
+  two_models_pvalues$donor_pvalue<0.05] <- "red"
+
+plot(two_models_pvalues$simple_pvalue,
+     two_models_pvalues$donor_pvalue,
+     col = two_models_pvalues$colour,
+     xlab = "simple model p-values",
+     ylab ="Donor model p-values",
+     main="Simple vs Donor Limma")
+
+legend(0,1,legend=c("p-val. sig. - both models","p-val. sig. - donor model", "p-val sig. - simple model", "non- sig. gene"),
+       fill=c("red","blue", "orange","black"),cex = 0.7)
+```
+Color Description / Legend: 
+Red- indicates that the p-values are significant in both 
+Blue - Indicates the signficant p-values of the donor model 
+Orange - Indicates the signficant p-val. of the simple model. 
+Black - Are the non- significant genes
+
+From the plot, we can see there are some signficant p-values that exist in both models. However, as expected the majority of the genes in the data set are not significant. 
+
+
+## Checking the signficance of p53 
+
+Again, we can check the significance of the gene of interest p53. 
+
+```{r}
+#Selecting our gene of interest. The hugo id for the p53 gene in the  data set is TP53. 
+p53_of_interest <- which(rownames(normalized_count_data) == "TP53")
+```
+
+```{r}
+two_models_pvalues$colour <- "grey"
+two_models_pvalues$colour[two_models_pvalues$hgnc_sym==
+                            p53_of_interest] <- "orange"
+plot(two_models_pvalues$simple_pvalue,
+     two_models_pvalues$donor_pvalue,
+     col = two_models_pvalues$colour,
+     xlab = "simple model p-values",
+     ylab ="Donor model p-values",
+      main="Simple vs Donor Limma")
+#add another point where p53 is located
+points(two_models_pvalues[which(
+  two_models_pvalues$hgnc_sym == p53_of_interest),2:3],
+       pch=20, col="red", cex=1.5)
+
+#creating the legend 
+legend(0,1,legend=c("p53","rest"),
+       fill=c("red","grey"),cex = 0.7)
+```
+p53 does not seem significant again. This may be again to the high heterogeneity. We need to account for  heterogeneity further. 
+
+
+## Heat map to look at our Top hits
+
+```{r}
+top_hits <- output_hits_pat$x[
+  output_hits_pat$P.Value<0.05]
+
+heatmap_matrix_tophits <- t(
+  scale(t(heatmap_matrix[
+which(rownames(heatmap_matrix) %in% top_hits),])))
+
+
+if(min(heatmap_matrix_tophits) == 0){
+heatmap_col = colorRamp2(c( 0, max(heatmap_matrix_tophits)),
+                             c( "white", "red"))
+} else {
+heatmap_col = colorRamp2(c(min(heatmap_matrix_tophits), 0,
+      max(heatmap_matrix_tophits)), c("blue", "white", "red"))
+  }
+current_heatmap <- Heatmap(as.matrix(heatmap_matrix_tophits),
+                           cluster_rows = TRUE,
+                           cluster_columns = TRUE,
+                               show_row_dend = TRUE,
+                               show_column_dend = TRUE,
+                               col=heatmap_col,
+                               show_column_names = TRUE,
+                               show_row_names = FALSE,
+                               show_heatmap_legend = TRUE,
+                               )
+plot(current_heatmap)
+```
+From the current data, there is no clear definition for our top hits even though we have accounted for the heterogeneity of the donors. So they are still grouping in terms of donor. 
+
+We can repeat the step by clustering the columns based on the fractions.
+
+### Grouping the fractions in the heatmap
+```{r}
+
+heatmap_matrix_tophits<- heatmap_matrix_tophits[,
+c(grep(colnames(heatmap_matrix_tophits),
+                      pattern = "\\F1"),
+  grep(colnames(heatmap_matrix_tophits),
+                      pattern = "\\F2"),
+  grep(colnames(heatmap_matrix_tophits),
+                      pattern = "\\F3"),
+  grep(colnames(heatmap_matrix_tophits),
+                      pattern = "\\F4"),
+  grep(colnames(heatmap_matrix_tophits),
+                      pattern = "\\Ftot"))]
+
+if(min(heatmap_matrix_tophits) == 0){
+heatmap_col = colorRamp2(c( 0, max(heatmap_matrix_tophits)),
+                             c( "white", "red"))
+} else {
+heatmap_col = colorRamp2(c(min(heatmap_matrix_tophits), 0,
+                    max(heatmap_matrix_tophits)),
+                    c("blue", "white", "red"))
+}
+current_heatmap <- Heatmap(as.matrix(heatmap_matrix_tophits),
+                           cluster_rows = TRUE,
+                           cluster_columns = FALSE,
+                               show_row_dend = TRUE,
+                               show_column_dend = TRUE,
+                               col=heatmap_col,
+                               show_column_names = TRUE,
+                               show_row_names = FALSE,
+                               show_heatmap_legend = TRUE,
+                               )
+
+current_heatmap
+```
+When we group the fractions together, we again do not see a clear block of genes, that can be seen in a particular fraction. 
+
+### Restricting the p-value even further (p<0.01)
+
+```{r}
+top_hits <- top_hits <- output_hits_pat$x[
+  output_hits_pat$P.Value<0.01]
+
+heatmap_matrix_tophits <- t(
+scale(t(heatmap_matrix[which(rownames(heatmap_matrix) %in% top_hits),])))
+
+heatmap_matrix_tophits<- heatmap_matrix_tophits[,
+c(grep(colnames(heatmap_matrix_tophits),
+                      pattern = "\\F1"),
+  grep(colnames(heatmap_matrix_tophits),
+                      pattern = "\\F2"),
+  grep(colnames(heatmap_matrix_tophits),
+                      pattern = "\\F3"),
+  grep(colnames(heatmap_matrix_tophits),
+                      pattern = "\\F4"),
+  grep(colnames(heatmap_matrix_tophits),
+                      pattern = "\\Ftot"))]
+
+if(min(heatmap_matrix_tophits) == 0){
+heatmap_col = colorRamp2(c( 0, max(heatmap_matrix_tophits)),
+                             c( "white", "red"))
+} else {
+heatmap_col = colorRamp2(c(min(heatmap_matrix_tophits), 0,
+                              max(heatmap_matrix_tophits)),
+                             c("blue", "white", "red"))
+}
+current_heatmap <- Heatmap(as.matrix(heatmap_matrix_tophits),
+                cluster_rows = TRUE,  show_row_dend = TRUE,
+                cluster_columns = FALSE,show_column_dend = FALSE,
+                col=heatmap_col,show_column_names = TRUE,
+                show_row_names = FALSE,show_heatmap_legend = TRUE)
+
+current_heatmap
+```
+When we restrict the p-value even further (p<0.01), there is a subtle difference between the fractions, but the difference is not very clear. 
+
+# Thresholded over-representation analysis 
+
+
+In order to analyse the up and downregulated genes, we will use the edgeR package. edgeR package has some features that are specific to RNA-seq. 
+
+
+# Setting up edgeR matrix
+
+```{r}
+library(GEOquery)
+sfiles = getGEOSuppFiles('GSE164692')
+fnames = rownames(sfiles)
+# there is only one supplemental file
+GSE164692_exp = read.delim(fnames[1],header=TRUE,
+                check.names = FALSE)
+cpms = edgeR::cpm(GSE164692_exp[,2:33])
+rownames(cpms) <- GSE164692_exp[,1]
+# get rid of low counts
+keep = rowSums(cpms >1) >=4
+GSE164692_exp_filtered = GSE164692_exp[keep,]
+filtered_data_matrix <- as.matrix(GSE164692_exp_filtered[,2:33])
+rownames(filtered_data_matrix) <- GSE164692_exp_filtered$Symbol
+
+```
+
+```{r}
+# creating our sample groups, based on the fraction and donors. 
+samples <- data.frame( lapply(colnames(GSE164692_exp_filtered)[2:33], FUN=function(x){
+          unlist(strsplit(x, split = "\\_"))[c(2,3)]}))
+colnames(samples) <- colnames(GSE164692_exp_filtered)[2:33]
+rownames(samples) <- c("Donors","Fraction")
+samples <- data.frame(t(samples))
+
+d = DGEList(counts=filtered_data_matrix, group=samples$Fraction)
+
+# Estimating Dispersion
+
+model_design_pat <- model.matrix(~ samples$Donors + samples$Fraction)
+
+# estimate disperson 
+d <- estimateDisp(d, model_design_pat)
+
+#calculate normalization factors
+d <- calcNormFactors(d)
+
+#fit model
+fit <- glmQLFit(d, model_design_pat)
+
+qlf.Fraction <- glmQLFTest(fit, coef = 'samples$FractionF4') 
+
+
+```
+
+
+```{r}
+qlf_output_hits <- topTags(qlf.Fraction,sort.by = "PValue",
+                           n = nrow(filtered_data_matrix))
+```
+
+###How many gene pass threshold value of p<0.05? 
+```{r}
+length(which(qlf_output_hits$table$PValue < 0.05))
+```
+Using the edgeR approach, there are 877 genes that pass the signficance test. This is almost double the genes that passed, compared to limma approach. 
+
+###Checking the number of genes that pass correction using edgeR 
+
+```{r}
+length(which(qlf_output_hits$table$FDR < 0.05))
+```
+Unfortunately, we again have 0 genes that pass the correction test. 
+
+
+## Checking for Gene upregulation 
+We can now also test for gene up-regulation in our analysis. Altough there is no strong signal, there will be other mechnanisms associated to it. We need to do further analysis and pathway analysis (Assignment 3) to find these mechanisms. 
+From our output, the genes that have a positive logFC score, are determined to be upregulated. Down regulated genes have a negative logFC score. 
+
+```{r}
+length(which(qlf_output_hits$table$PValue < 0.05
+             & qlf_output_hits$table$logFC > 0))
+```
+
+## Checking for Gene down regulation 
+As mentioned above, we can check for the downregulated genes, by filtering for genes that have have -logFC score. 
+
+```{r}
+length(which(qlf_output_hits$table$PValue < 0.05
+             & qlf_output_hits$table$logFC < 0))
+```
+
+## Creating the Threshold list. 
+
+We can now create a threshold list. The list will threshold based on a p-value of <0.05. I chose a p-value of <0.05, since the researchers from the paper, didn't focus on a single gene. They had many different genes, that they wanted to analyse. The goal of the research study was to test the fractioning technique and if it could filter cells into cohorts, to determine their properties. Thereby, if the p-value is too restrictive we may lose information on genes for a particular fraction. 
+
+```{r}
+#merge gene names with the top hits
+qlf_output_hits_withgn <- merge(GSE164692_exp[,1],qlf_output_hits, by.x=1, by.y = 0)
+
+qlf_output_hits_withgn[,"rank"] <- -log(qlf_output_hits_withgn$PValue,base =10) * sign(qlf_output_hits_withgn$logFC)
+
+qlf_output_hits_withgn <- qlf_output_hits_withgn[order(qlf_output_hits_withgn$rank),]
+
+#sorting for the genes that are up regulated (i.e. +logFc)
+upregulated_genes <- qlf_output_hits_withgn$x[
+  which(qlf_output_hits_withgn$PValue < 0.05 
+             & qlf_output_hits_withgn$logFC > 0)]
+
+#sorting for the genes that are down regulated (i.e. +logFc)
+downregulated_genes <- qlf_output_hits_withgn$x[
+  which(qlf_output_hits_withgn$PValue < 0.05 
+             & qlf_output_hits_withgn$logFC < 0)]
+```
+
+We can now create new files containing the upregulated and down regulated genes. We are also creating a rank file, which contains all genes, no matter if they are significant or not. In the rank file, for each gene we will have an associated rank. The rank will indicate if the particular gene is up or down regulated and its relative significance. Thereby, the top of the list will have all the up regulated genes, and as we go down the list, we will have all the down regulated genes. 
+
+Note: The git readme will also contain these up, down and whole list regulated genes: https://github.com/bcb420-2022/Erik_Ensminger
+```{r}
+#download the upregulated genes 
+write.table(x=upregulated_genes,
+            file=file.path(getwd(),"GSE164692_upregulated_genes.txt"),sep = "\t",
+            row.names = FALSE,col.names = FALSE,quote = FALSE)
+
+#download the download genes 
+write.table(x=downregulated_genes,
+            file=file.path(getwd(),"GSE164692_downregulated_genes.txt"),sep = "\t",
+            row.names = FALSE,col.names = FALSE,quote = FALSE)
+
+#download the rank file, containing all genes 
+write.table(x=data.frame(genename= qlf_output_hits_withgn$x, F_stat= qlf_output_hits_withgn$rank),
+            file=file.path(getwd(),"GSE164692_ranked_genelist.txt"),sep = "\t",
+            row.names = FALSE,col.names = FALSE,quote = FALSE)
+```
+
+# Gene List Enrichment Analysis 
+
+### Please note the figures to the Gene List Enrichment Analysis section, will be included in the journal entry for this assignment 2 found here: https://github.com/bcb420-2022/Erik_Ensminger/wiki/J7:-Assignment-%232 
+
+We can now analyse our thresholded list of the up and down regulated genes. The importance for analysing the threshold is to identify gene sets or pathways that may be enriched in the given threshold list. We can also identify gene sets or pathways that are depleted in my given threshold list. 
+
+For this assignment, we will focus on genes that are over represented/ enriched in the given list. 
+
+To analyse the lists, we will use the Fisher's exact test. We will use this test to find gene sets that are up regulated in our lists.
+We will also use the G:profiler for gene set analysis tools. I chose G:profiler since it has GO gene set, which is regularey updated and has a lot of available gene sets. G:profiler also has many other gene sets available, and a web server. 
+
+For simplicity, I will use the web server to to do the gene enrichment analysis. 
+Annotation version: e105_eg52_p16_e84549f 
+
+## Gene List Enrichment Analysis - Upregulated Genes 
+
+To view the analysis of the upregulated genes on G:profiler, follow the following link:  https://biit.cs.ut.ee/gprofiler/gost
+
+#### Set up: 
+I first pasted all my up regulated genes into the query field of g:profiler. 
+For the advanced settings, based on the recommendation of the course lectures, I selected to have all results displayed. 
+In addition, for the data sources I opted to have "GO biological process", "No electronic GO annotations", "Reactome" and "WikiPathways". As mentioned before, these sources have a lot of data, and are updated regularly making them a good source to find potential terms. 
+
+#### Results: 
+For the upregulated list, the term that were most associated to the list were: 
+*GO Biological Process:* Cytoplasmic Translation 
+*Reactome:* Euakryotic Translation Elongation
+*WikiPathways:* Cytoplasmic Ribosomal Proteins. 
+
+
+## Gene List Enrichment Analysis - Downregulated Genes 
+
+To view the analysis of the upregulated genes on G:profiler, follow the following link: https://biit.cs.ut.ee/gplink/l/yZn9fN22TA
+
+#### Set up: 
+I did the same set up for the down regulated genes as I did for the up regulated genes. 
+I first pasted all my up regulated genes into the query field of g:profiler. 
+For the advanced settings, based on the recommendation of the course lectures, I selected to have all results displayed. 
+In addition, for the data sources I opted to have "GO biological process", "No electronic GO annotations", "Reactome" and "WikiPathways". As mentioned before, these sources have a lot of data, and are updated regularly making them a good source to find potential terms. 
+
+#### Results: 
+For the downregulated list, the term that were most associated to the list were: 
+*GO Biological Process:* endodermal cell differentiation
+*Reactome:* Collagen biosynthesis and modifying enzymes
+*WikiPathways:* Small cell lung cancer
+
+## Gene List Enrichment Analysis - Whole list of genes. 
+
+To view the analysis of the whole list of genes on G:profiler, follow the following link: https://biit.cs.ut.ee/gplink/l/djykc7XjQG
+Note: Due to the long processing time (more than 1.5 hours), I only used some of the genes from the whole list. I chose genes from the middle of the list as the top of the ranked genes are up regulated and bottom of the list are down regulated genes. Due to this, this terms found from the whole list, may not be completely accuarate, but my computer did not allow for further analysis on the G:profiler. 
+#### Set up: 
+I did the same set up for the whole list of genes as I did for the up regulated genes. 
+I first pasted all my up regulated genes into the query field of g:profiler. 
+For the advanced settings, based on the recommendation of the course lectures, I selected to have all results displayed. 
+In addition, for the data sources I opted to have "GO biological process", "No electronic GO annotations", "Reactome" and "WikiPathways". As mentioned before, these sources have a lot of data, and are updated regularly making them a good source to find potential terms. 
+
+#### Results: Not
+For the whole gene list, the term that were most associated to the list were: 
+*GO Biological Process:* protein modification process
+*Reactome:* Regulation of PTEN stability and activity
+*WikiPathways:* Lipid metabolism pathway
+
+
+## Comparing Up and Down Regulated Terms with the whole list
+
+The up regulated genes were associated with translation term such as cytoplasmic translation and ribosomal protein (which are needed for translation). The down regulated genes were associated with cell differentiation and collagen biosynthesis. The down regulation of cell differentation makes sense in stem cells. In order to maintain their pluropotency, they prevent differentiation. Due to the analysed data set of whole list of genes being only a fraction of the original file, a correct comparison to the down and upregulated terms will not be fully accurate. The terms for the whole list genes is very random such as protein modification process and lipid metabolism pathway. 
+
+
+
+# Interpretation
+
+## Do the over-representation results support conclusions or mechanism discussed in the original paper? 
+
+ As discussed in the paper, stem cells remain in their stem cell niche in a pluripotent state. To maintain pluripotency (an undifferentiated state), they must not down regulate their cell differentation. From our G:profiler analysis, endodermal cell differentiation is a term that is down regulated in our set. Since the researchers used fractioning techniques to sort stem cells, our analysis supports the theory that the researchers were using un-differentiated stem cells, that had their endodermal cell differentiation down regulated. In addition, stem cells still divide into sister cells, which also maintain pluripotency. It therefore makes sense that we see the terms "Cytoplasmic Translation" and "Cytoplasmic Ribosomal Proteins" in the upregulated gene list. 
+
+## Can you find evidence, i.e. publications, to support some of the results that you see. How does this evidence support your results.
+
+A known property of stem cells is that they are un-differentiated cells, that maintain pluripotency through dividing into sister cells (Chen, T et al. 2008) . They are not differentiated meaning their cell-fate is not yet determined. Stem cells may then differentiate if a cellular event forces them to take on a new cell-fate (Szymonowicz, M. et al. 2019). The original paper, which produced the data set investigated the application of a new fractioning technique for stem cell sorting. Since most, if not all cells that were used in the fractioning technique were stem cells, it was evident up regulated genes would be associated with widely known stem cell properties to maintain their pluripotency, and down regulated genes would be associated with terms that would differentiate the stem cells. 
+
+
+## Citation 
+
+Casciaro, F., Zia, S., Forcato, M., Zavatti, M., Beretti, F., Bertucci, E., Zattoni, A., Reschiglian, P., Alviano, F., Bonsi, L., Follo, M. Y., Demaria, M., Roda, B., & Maraldi, T. (2021). Unravelling Heterogeneity of Amplified Human Amniotic Fluid Stem Cells Sub-Populations. Cells, 10(1), 158. https://doi.org/10.3390/cells10010158
+
+Zakrzewski, W., Dobrzyński, M., Szymonowicz, M. et al. Stem cells: past, present, and future. Stem Cell Res Ther 10, 68 (2019). https://doi.org/10.1186/s13287-019-1165-5
+
+Liu, X., Huang, J., Chen, T. et al. Yamanaka factors critically regulate the developmental signaling network in mouse embryonic stem cells. Cell Res 18, 1177–1189 (2008). https://doi.org/10.1038/cr.2008.309
+
+Robinson MD, McCarthy DJ, Smyth GK (2010). “edgeR: a Bioconductor package for differential expression analysis of digital gene expression data.” Bioinformatics, 26(1), 139-140. doi: 10.1093/bioinformatics/btp616. 
+
+Gu, Z. (2016) Complex heatmaps reveal patterns and correlations in multidimensional genomic data. DOI: 10.1093/bioinformatics/btw313
+
+Zhu Y, Davis S, Stephens R, Meltzer PS, Chen Y (2008). “GEOmetadb: powerful alternative search engine for the Gene Expression Omnibus.” Bioinformatics (Oxford, England), 24(23), 2798–2800. ISSN 1367-4811, doi: 10.1093/bioinformatics/btn520, http://www.ncbi.nlm.nih.gov/pubmed/18842599. 
+
+Steipe, B., & Isserlin, R. (Edited). (2022). R-basics https://bcb420-2022.github.io/R_basics/
+
+Ruth Isserlin, Course Lectures (2022)
+
+# [END]
