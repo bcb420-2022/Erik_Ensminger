@@ -1,0 +1,23 @@
+producer_class	xtools.gsea.GseaPreranked
+producer_timestamp	1648773100614
+param	rpt_label	BCB420_A3_ranked_GSEA
+param	rnd_seed	timestamp
+param	set_min	15
+param	zip_report	false
+param	create_svgs	false
+param	scoring_scheme	weighted
+param	rnk	/Users/erikensminger/Documents/BCB420_code/A3/GSE164692_ranked_genelist.rnk
+param	norm	meandiv
+param	out	/Users/erikensminger/Documents/BCB420_code/A3
+param	mode	Abs_max_of_probes
+param	include_only_symbols	true
+param	help	false
+param	set_max	200
+param	gmx	/Users/erikensminger/Documents/BCB420_code/A3/Human_GOBP_AllPathways_no_GO_iea_March_01_2022_symbol.gmt
+param	make_sets	true
+param	plot_top_x	20
+param	gui	false
+param	nperm	1000
+param	collapse	No_Collapse
+
+file	/Users/erikensminger/Documents/BCB420_code/A3/BCB420_A3_ranked_GSEA.GseaPreranked.1648773100614/index.html
