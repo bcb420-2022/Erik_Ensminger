@@ -16,9 +16,9 @@ Link to Assignment 2 Data and Figures Folder: https://github.com/bcb420-2022/Eri
 # Assignnment 3 Links 
 
 
-Link to Assignment 3 HTML: https://github.com/bcb420-2022/Erik_Ensminger/blob/main/A3/BCB420_A3_Erik_Ensminger.html
+Link to Assignment 3 HTML: https://github.com/bcb420-2022/Erik_Ensminger/blob/main/A3/A3_ErikEnsminger.html
 
-Link to Assignment 3 Rmd: https://github.com/bcb420-2022/Erik_Ensminger/blob/main/A3/BCB420_A3_Erik_Ensminger.Rmd
+Link to Assignment 3 Rmd: https://github.com/bcb420-2022/Erik_Ensminger/blob/main/A3/A3_ErikEnsminger.Rmd
 
 Link to Assignment 3 Data and Figures Folder: https://github.com/bcb420-2022/Erik_Ensminger/tree/main/A3/BCB420_Assignment3_Figures
 
